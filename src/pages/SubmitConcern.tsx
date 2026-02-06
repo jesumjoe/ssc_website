@@ -15,6 +15,8 @@ import {
 } from "@/components/ui/select";
 import MainLayout from "@/components/layout/MainLayout";
 import { useToast } from "@/hooks/use-toast";
+import GeotagCamera from "@/components/GeotagCamera";
+import { supabase } from "@/integrations/supabase/client";
 
 const SubmitConcern = () => {
   const navigate = useNavigate();
@@ -34,6 +36,8 @@ const SubmitConcern = () => {
     description: "",
   });
 
+  const [geotaggedImage, setGeotaggedImage] = useState<string | null>(null);
+
   const categories = [
     "Academic Issues",
     "Infrastructure",
@@ -51,21 +55,84 @@ const SubmitConcern = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!geotaggedImage) {
+      toast({
+        title: "Photo Required",
+        description: "Please capture a geotagged photo of the concern area before submitting.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsSubmitting(true);
+    let imageUrl = null;
 
-    // Simulate API call - Replace with actual backend integration
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+    try {
+      // 1. Upload Image if exists
+      if (geotaggedImage) {
+        const fileName = `evidence_${Date.now()}.jpg`;
+        // Convert base64 to blob
+        const res = await fetch(geotaggedImage);
+        const blob = await res.blob();
 
-    // Generate a mock concern number
-    const mockConcernNumber = `SC-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
-    setConcernNumber(mockConcernNumber);
-    setSubmitted(true);
-    setIsSubmitting(false);
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('evidence')
+          .upload(fileName, blob, {
+            contentType: 'image/jpeg',
+            upsert: false
+          });
 
-    toast({
-      title: "Concern Submitted Successfully",
-      description: `Your concern number is ${mockConcernNumber}`,
-    });
+        if (uploadError) throw uploadError;
+
+        // Get Public URL
+        const { data: { publicUrl } } = supabase.storage
+          .from('evidence')
+          .getPublicUrl(fileName);
+
+        imageUrl = publicUrl;
+      }
+
+      // 2. Insert Record
+      const mockConcernNumber = `SC-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+
+      const { error: insertError } = await supabase
+        .from('concerns')
+        .insert([
+          {
+            concern_number: mockConcernNumber,
+            student_name: isAnonymous ? 'Anonymous' : formData.name,
+            email: isAnonymous ? null : formData.email,
+            student_id: isAnonymous ? null : formData.studentId,
+            department: isAnonymous ? null : formData.department,
+            category: formData.category,
+            subject: formData.subject,
+            description: formData.description,
+            is_anonymous: isAnonymous,
+            image_url: imageUrl,
+            status: 'pending'
+          }
+        ]);
+
+      if (insertError) throw insertError;
+
+      setConcernNumber(mockConcernNumber);
+      setSubmitted(true);
+      toast({
+        title: "Concern Submitted Successfully",
+        description: `Your concern number is ${mockConcernNumber}`,
+      });
+
+    } catch (error: any) {
+      console.error('Error submitting concern:', error);
+      toast({
+        title: "Submission Failed",
+        description: error.message || "An error occurred while submitting your concern. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   if (submitted) {
@@ -112,6 +179,7 @@ const SubmitConcern = () => {
                       subject: "",
                       description: "",
                     });
+                    setGeotaggedImage(null);
                   }}
                 >
                   Submit Another Concern
@@ -258,6 +326,18 @@ const SubmitConcern = () => {
                     required
                   />
                 </div>
+              </div>
+            </div>
+
+            {/* Geotagged Photo Upload */}
+            <div className="form-section">
+              <h2 className="text-lg font-semibold mb-4">Evidence (Required)</h2>
+              <div className="space-y-4">
+                <Label className="text-destructive">Upload Geotagged Photo *</Label>
+                <p className="text-sm text-muted-foreground mb-2">
+                  Take a photo of the concern area. Location and time will be automatically stamped on the image.
+                </p>
+                <GeotagCamera onCapture={setGeotaggedImage} />
               </div>
             </div>
 
