@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { FileText, Search, Users, Shield, ArrowRight, CheckCircle } from "lucide-react";
+import { FileText, Search, Users, Shield, ArrowRight, CheckCircle, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import MainLayout from "@/components/layout/MainLayout";
 
@@ -45,7 +45,7 @@ const Index = () => {
               Your Voice, Our Priority
             </h1>
             <p className="text-xl text-primary-foreground/80 mb-8 leading-relaxed">
-              The Student Council is dedicated to addressing student concerns and 
+              The Student Council is dedicated to addressing student concerns and
               ensuring your voice is heard by the university management.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
@@ -63,6 +63,17 @@ const Index = () => {
               >
                 <Link to="/track-concern">Track Your Concern</Link>
               </Button>
+              <Button
+                asChild
+                size="lg"
+                variant="secondary"
+                className="bg-white/10 hover:bg-white/20 text-primary-foreground border-none text-base px-8 backdrop-blur-sm"
+              >
+                <Link to="/geotag-tool">
+                  <MapPin className="mr-2 h-5 w-5" />
+                  Geotag Tool
+                </Link>
+              </Button>
             </div>
           </div>
         </div>
@@ -74,7 +85,7 @@ const Index = () => {
           <div className="text-center mb-12">
             <h2 className="text-3xl font-bold text-foreground mb-4">How We Serve You</h2>
             <p className="text-muted-foreground max-w-2xl mx-auto">
-              Our streamlined process ensures every concern is heard, reviewed, and addressed 
+              Our streamlined process ensures every concern is heard, reviewed, and addressed
               with the attention it deserves.
             </p>
           </div>

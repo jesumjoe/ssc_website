@@ -1,7 +1,8 @@
 import { useState, useRef } from "react";
-import { Camera, MapPin, RefreshCw, Check, X, Upload } from "lucide-react";
+import { Camera, RefreshCw, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import piexif from "piexifjs";
 
 interface GeotagCameraProps {
   onCapture: (imageData: string | null) => void;
@@ -56,6 +57,16 @@ const GeotagCamera = ({ onCapture }: GeotagCameraProps) => {
     });
   };
 
+  const toDegMinSec = (coordinate: number): [[number, number], [number, number], [number, number]] => {
+    const absolute = Math.abs(coordinate);
+    const degrees = Math.floor(absolute);
+    const minutesNotTruncated = (absolute - degrees) * 60;
+    const minutes = Math.floor(minutesNotTruncated);
+    const seconds = Math.floor((minutesNotTruncated - minutes) * 60 * 100);
+
+    return [[degrees, 1], [minutes, 1], [seconds, 100]];
+  };
+
   const processImage = async (file: File) => {
     setLoading(true);
     setLoadingText("Fetching location...");
@@ -67,9 +78,6 @@ const GeotagCamera = ({ onCapture }: GeotagCameraProps) => {
         locationData = await getLocation();
       } catch (err) {
         console.error("Failed to get location:", err);
-        // Fallback or ask user? For now just show error and proceed without location or stop?
-        // Requirement implies mandatory geotag, but if GPS fails, maybe we still allow it but mark as 'No GPS'?
-        // The prompt said "Geotag picture", so let's try to enforce it but handle error gracefully.
         toast({
           title: "Location Error",
           description: "Could not retrieve current location. Please ensure location services are enabled.",
@@ -92,8 +100,7 @@ const GeotagCamera = ({ onCapture }: GeotagCameraProps) => {
 
         if (!ctx) return;
 
-        // Resize if too huge (optional, but good for performance)
-        // Let's keep reasonable max dimension, e.g., 1920px
+        // Resize logic
         const maxDim = 1920;
         let width = img.width;
         let height = img.height;
@@ -142,7 +149,7 @@ const GeotagCamera = ({ onCapture }: GeotagCameraProps) => {
 
         const words = address.split(" ");
         let line = "";
-        let y = height - overlayHeight + fontSize * 2.5; // Start below header
+        let y = height - overlayHeight + fontSize * 2.5;
 
         for (let i = 0; i < words.length; i++) {
           const testLine = line + words[i] + " ";
@@ -167,8 +174,33 @@ const GeotagCamera = ({ onCapture }: GeotagCameraProps) => {
         ctx.fillText(coordsStr, padding, y);
         ctx.fillText(dateStr, padding, y + (fontSize * 1.2));
 
-        // Export
-        const dataUrl = canvas.toDataURL("image/jpeg", 0.8);
+        // Export as JPEG
+        let dataUrl = canvas.toDataURL("image/jpeg", 0.9);
+
+        // --- EXIF EMBEDDING START ---
+        try {
+          const gps = {};
+          gps[piexif.GPSIFD.GPSLatitudeRef] = locationData.lat < 0 ? "S" : "N";
+          gps[piexif.GPSIFD.GPSLatitude] = toDegMinSec(locationData.lat);
+          gps[piexif.GPSIFD.GPSLongitudeRef] = locationData.lng < 0 ? "W" : "E";
+          gps[piexif.GPSIFD.GPSLongitude] = toDegMinSec(locationData.lng);
+
+          const exifObj = { "GPS": gps };
+          const exifBytes = piexif.dump(exifObj);
+
+          // Insert EXIF into the JPEG data URL
+          dataUrl = piexif.insert(exifBytes, dataUrl);
+          console.log("EXIF data inserted successfully");
+        } catch (exifErr) {
+          console.error("Error inserting EXIF data:", exifErr);
+          toast({
+            title: "Warning",
+            description: "Visual overlay added, but failed to embed GPS metadata in file.",
+            variant: "default" // Not destructive, as image is still usable
+          });
+        }
+        // --- EXIF EMBEDDING END ---
+
         setImage(dataUrl);
         onCapture(dataUrl);
         setLoading(false);
@@ -188,17 +220,16 @@ const GeotagCamera = ({ onCapture }: GeotagCameraProps) => {
   };
 
   const handleRetake = (e: React.MouseEvent) => {
-    e.preventDefault(); // Prevent form submission
+    e.preventDefault();
     setImage(null);
     onCapture(null);
-    // Reset file input
     if (inputRef.current) {
       inputRef.current.value = "";
     }
   };
 
   const triggerInput = (e: React.MouseEvent) => {
-    e.preventDefault(); // Prevent form submission !!
+    e.preventDefault();
     inputRef.current?.click();
   };
 
