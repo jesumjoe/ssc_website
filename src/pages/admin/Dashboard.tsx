@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useSearchParams, Link } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -13,85 +13,146 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatusBadge, SeverityBadge, ConcernStatus } from "@/components/ui/status-badge";
+import { supabase } from "@/integrations/supabase/client";
+import { useNavigate } from "react-router-dom";
+import { useToast } from "@/hooks/use-toast";
 
 interface Concern {
   id: string;
+  dbId: string;
   subject: string;
   category: string;
   status: ConcernStatus;
   severity?: 1 | 2 | 3 | 4 | 5;
   submittedAt: string;
-  deadline: string;
-  assignedSSC: string[];
-  assignedUSC: string;
+  assignments: {
+    id: string;
+    full_name: string;
+    role: string;
+  }[];
 }
 
 const Dashboard = () => {
   const [searchParams] = useSearchParams();
-  const role = searchParams.get("role") || "ssc";
+  const navigate = useNavigate();
+  const { toast } = useToast();
+  const [role, setRole] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"pending" | "reviewed" | "all">("pending");
+  const [concerns, setConcerns] = useState<Concern[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Mock data - Replace with actual API data
-  const mockConcerns: Concern[] = [
-    {
-      id: "SC-M1234XY",
-      subject: "Inadequate Library Hours During Exam Period",
-      category: "Library",
-      status: "pending",
-      submittedAt: "2024-01-15T10:30:00Z",
-      deadline: "2024-01-16T10:30:00Z",
-      assignedSSC: ["John Doe", "Jane Smith"],
-      assignedUSC: "Dr. Michael Brown",
-    },
-    {
-      id: "SC-N5678AB",
-      subject: "Air Conditioning Issues in Building C",
-      category: "Infrastructure",
-      status: "reviewing",
-      severity: 3,
-      submittedAt: "2024-01-14T14:00:00Z",
-      deadline: "2024-01-15T14:00:00Z",
-      assignedSSC: ["Alice Johnson", "Bob Williams"],
-      assignedUSC: "Dr. Sarah Davis",
-    },
-    {
-      id: "SC-P9012CD",
-      subject: "Request for Extended Lab Access",
-      category: "Academic Issues",
-      status: "resolved",
-      severity: 2,
-      submittedAt: "2024-01-13T09:15:00Z",
-      deadline: "2024-01-14T09:15:00Z",
-      assignedSSC: ["Charlie Brown", "Diana Prince"],
-      assignedUSC: "Dr. Robert Wilson",
-    },
-    {
-      id: "SC-Q3456EF",
-      subject: "Safety Concerns in Parking Lot",
-      category: "Safety & Security",
-      status: "escalated",
-      severity: 5,
-      submittedAt: "2024-01-12T16:45:00Z",
-      deadline: "2024-01-13T16:45:00Z",
-      assignedSSC: ["Eve Taylor", "Frank Miller"],
-      assignedUSC: "Dr. Jennifer Lee",
-    },
-  ];
+  const handleSignOut = async () => {
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      toast({
+        title: "Signed Out",
+        description: "You have been successfully signed out.",
+      });
+      navigate("/admin");
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to sign out.",
+        variant: "destructive",
+      });
+    }
+  };
 
-  const filteredConcerns = mockConcerns.filter((concern) => {
+  // Fetch concerns and assignments from Supabase
+  useEffect(() => {
+    const fetchData = async () => {
+      setIsLoading(true);
+      try {
+        // 1. Get current user session
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          navigate("/admin");
+          return;
+        }
+
+        // 2. Fetch actual role from database
+        const { data: userData, error: userError } = await supabase
+          .from('admin_users')
+          .select('role')
+          .eq('id', user.id)
+          .single();
+
+        if (userError || !userData) throw new Error("Could not verify your role.");
+        const userRole = userData.role;
+        setRole(userRole);
+
+        // 3. Build Concerns Query based on role
+        let query = supabase.from('concerns').select('*');
+
+        // Faculty should only see escalated concerns (Data security handled by RLS, but query filtering for UX)
+        if (userRole === 'faculty') {
+          query = query.eq('status', 'escalated');
+        }
+
+        const { data: concernsData, error: concernsError } = await query.order('created_at', { ascending: false });
+        if (concernsError) throw concernsError;
+
+        // 4. Fetch Assignments
+        const { data: assignmentsData, error: assignmentsError } = await supabase
+          .from('concern_assignments')
+          .select('concern_id, admin_users(id, full_name, role)');
+
+        if (assignmentsError) throw assignmentsError;
+
+        if (concernsData) {
+          const formattedConcerns: Concern[] = concernsData.map(c => {
+            const concernAssignments = assignmentsData
+              ?.filter(a => a.concern_id === c.id)
+              .map((a: any) => ({
+                id: a.admin_users.id,
+                full_name: a.admin_users.full_name,
+                role: a.admin_users.role
+              })) || [];
+
+            return {
+              id: c.concern_number,
+              dbId: c.id,
+              subject: c.subject,
+              category: c.category,
+              status: c.status as ConcernStatus,
+              severity: c.severity,
+              submittedAt: c.created_at,
+              assignments: concernAssignments
+            };
+          });
+          setConcerns(formattedConcerns);
+        }
+      } catch (error: any) {
+        console.error('Error fetching dashboard data:', error);
+        toast({
+          title: "Access Error",
+          description: error.message || "Failed to load admin data.",
+          variant: "destructive"
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [navigate]);
+
+  const filteredConcerns = concerns.filter((concern) => {
     if (activeTab === "pending") return concern.status === "pending";
     if (activeTab === "reviewed") return concern.status !== "pending";
     return true;
   });
 
   const stats = {
-    total: mockConcerns.length,
-    pending: mockConcerns.filter((c) => c.status === "pending").length,
-    reviewing: mockConcerns.filter((c) => c.status === "reviewing").length,
-    resolved: mockConcerns.filter((c) => c.status === "resolved").length,
+    total: concerns.length,
+    pending: concerns.filter((c) => c.status === "pending").length,
+    reviewing: concerns.filter((c) => c.status === "reviewing").length,
+    resolved: concerns.filter((c) => c.status === "resolved").length,
   };
 
   const getRoleTitle = () => {
+    if (!role) return "Portal Dashboard";
     switch (role) {
       case "ssc":
         return "SSC Representative Dashboard";
@@ -100,7 +161,7 @@ const Dashboard = () => {
       case "faculty":
         return "Faculty Mentor Dashboard";
       default:
-        return "Dashboard";
+        return "Admin Dashboard";
     }
   };
 
@@ -146,10 +207,10 @@ const Dashboard = () => {
         </div>
 
         <div className="absolute bottom-0 left-0 right-0 p-6 border-t border-sidebar-border">
-          <Link to="/admin" className="sidebar-link w-full">
+          <button onClick={handleSignOut} className="sidebar-link w-full text-left">
             <LogOut className="h-5 w-5" />
             Sign Out
-          </Link>
+          </button>
         </div>
       </aside>
 
@@ -236,11 +297,10 @@ const Dashboard = () => {
               <button
                 key={tab.key}
                 onClick={() => setActiveTab(tab.key as typeof activeTab)}
-                className={`px-4 py-2 font-medium text-sm transition-colors border-b-2 -mb-px ${
-                  activeTab === tab.key
-                    ? "border-primary text-primary"
-                    : "border-transparent text-muted-foreground hover:text-foreground"
-                }`}
+                className={`px-4 py-2 font-medium text-sm transition-colors border-b-2 -mb-px ${activeTab === tab.key
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+                  }`}
               >
                 {tab.label}
               </button>
@@ -252,7 +312,7 @@ const Dashboard = () => {
             {filteredConcerns.length > 0 ? (
               filteredConcerns.map((concern) => (
                 <Link
-                  key={concern.id}
+                  key={concern.dbId}
                   to={`/admin/concern/${concern.id}?role=${role}`}
                   className="concern-card block"
                 >
@@ -263,27 +323,39 @@ const Dashboard = () => {
                           {concern.id}
                         </span>
                         <StatusBadge status={concern.status} />
-                        {concern.severity && <SeverityBadge level={concern.severity} />}
                       </div>
                       <h3 className="font-semibold text-foreground mb-1 truncate">
                         {concern.subject}
                       </h3>
-                      <p className="text-sm text-muted-foreground">
-                        {concern.category} • Submitted{" "}
-                        {new Date(concern.submittedAt).toLocaleDateString()}
+                      <p className="text-sm text-muted-foreground mb-3 line-clamp-1">
+                        {concern.category} • {new Date(concern.submittedAt).toLocaleDateString()}
                       </p>
-                    </div>
-                    <ChevronRight className="h-5 w-5 text-muted-foreground flex-shrink-0" />
-                  </div>
 
-                  {concern.status === "pending" && (
-                    <div className="mt-3 pt-3 border-t flex items-center gap-2">
-                      <Clock className="h-4 w-4 text-warning" />
-                      <span className="text-sm text-warning">
-                        Deadline: {new Date(concern.deadline).toLocaleString()}
-                      </span>
+                      {/* Assigned Admins Row */}
+                      {concern.assignments.length > 0 && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Assigned:</span>
+                          <div className="flex -space-x-2">
+                            {concern.assignments.map((admin) => (
+                              <div
+                                key={admin.id}
+                                className="w-6 h-6 rounded-full border-2 border-background bg-primary/10 flex items-center justify-center"
+                                title={`${admin.full_name} (${admin.role.toUpperCase()})`}
+                              >
+                                <span className="text-[8px] font-bold text-primary">
+                                  {admin.full_name.split(' ').map(n => n[0]).join('').toUpperCase()}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  )}
+                    <div className="hidden sm:flex flex-col items-end gap-2">
+                      {concern.severity && <SeverityBadge level={concern.severity} />}
+                      <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                    </div>
+                  </div>
                 </Link>
               ))
             ) : (

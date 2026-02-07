@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/select";
 import MainLayout from "@/components/layout/MainLayout";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 
 type UserRole = "ssc" | "usc" | "faculty";
 
@@ -23,25 +24,51 @@ const AdminLogin = () => {
   const [formData, setFormData] = useState({
     email: "",
     password: "",
-    role: "" as UserRole | "",
   });
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
 
-    // Simulate API call - Replace with actual authentication
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    try {
+      // 1. Sign in with Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: formData.email,
+        password: formData.password,
+      });
 
-    // For demo purposes, navigate to dashboard
-    toast({
-      title: "Login Successful",
-      description: `Welcome back! Logged in as ${formData.role?.toUpperCase()} Representative.`,
-    });
+      if (authError) throw authError;
 
-    // Navigate based on role
-    navigate(`/admin/dashboard?role=${formData.role}`);
-    setIsLoading(false);
+      if (authData.user) {
+        // 2. Fetch the user's role from admin_users table
+        const { data: userData, error: userError } = await supabase
+          .from("admin_users")
+          .select("role")
+          .eq("id", authData.user.id)
+          .single();
+
+        if (userError) throw new Error("User record not found in admin database.");
+
+        const userRole = userData.role;
+
+        toast({
+          title: "Login Successful",
+          description: `Welcome back! Logged in as ${userRole.toUpperCase()} Representative.`,
+        });
+
+        // 3. Navigate to dashboard with the correct role
+        navigate(`/admin/dashboard?role=${userRole}`);
+      }
+    } catch (error: any) {
+      console.error("Login error:", error);
+      toast({
+        title: "Login Failed",
+        description: error.message || "An error occurred during sign in.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -60,24 +87,6 @@ const AdminLogin = () => {
             </div>
 
             <form onSubmit={handleLogin} className="space-y-5">
-              <div className="space-y-2">
-                <Label htmlFor="role">Role *</Label>
-                <Select
-                  value={formData.role}
-                  onValueChange={(value) => setFormData({ ...formData, role: value as UserRole })}
-                  required
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select your role" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ssc">SSC Representative (Class Level)</SelectItem>
-                    <SelectItem value="usc">USC Representative (Department Level)</SelectItem>
-                    <SelectItem value="faculty">Faculty Mentor</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
               <div className="space-y-2">
                 <Label htmlFor="email">Email Address *</Label>
                 <Input

@@ -5,6 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import MainLayout from "@/components/layout/MainLayout";
 import { StatusBadge, SeverityBadge, ConcernStatus } from "@/components/ui/status-badge";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
 interface ConcernDetails {
   id: string;
@@ -25,55 +27,73 @@ const TrackConcern = () => {
   const [isSearching, setIsSearching] = useState(false);
   const [searchedOnce, setSearchedOnce] = useState(false);
   const [concernDetails, setConcernDetails] = useState<ConcernDetails | null>(null);
-
-  // Mock data for demonstration - Replace with actual API call
-  const mockConcernData: ConcernDetails = {
-    id: "SC-M1234XY",
-    subject: "Inadequate Library Hours During Exam Period",
-    category: "Library",
-    status: "reviewing",
-    severity: 3,
-    submittedAt: "2024-01-15T10:30:00Z",
-    timeline: [
-      {
-        date: "2024-01-15 10:30 AM",
-        title: "Concern Submitted",
-        description: "Your concern has been successfully submitted and recorded.",
-      },
-      {
-        date: "2024-01-15 11:00 AM",
-        title: "Assigned to Representatives",
-        description: "Assigned to 2 SSC representatives and 1 USC representative for review.",
-      },
-      {
-        date: "2024-01-15 02:30 PM",
-        title: "Initial Review Started",
-        description: "SSC representatives have begun reviewing your concern.",
-      },
-      {
-        date: "2024-01-16 09:00 AM",
-        title: "Under USC Review",
-        description: "Concern validated by SSC and forwarded to USC for severity assessment.",
-      },
-    ],
-  };
+  const { toast } = useToast();
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSearching(true);
     setSearchedOnce(true);
 
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    try {
+      // Fetch concern by concern_number
+      const { data: concernData, error: concernError } = await supabase
+        .from('concerns')
+        .select('*')
+        .eq('concern_number', concernNumber.trim().toUpperCase())
+        .single();
 
-    // For demo, show mock data if any number is entered
-    if (concernNumber.trim()) {
-      setConcernDetails({ ...mockConcernData, id: concernNumber.toUpperCase() });
-    } else {
+      if (concernError) {
+        if (concernError.code === 'PGRST116') {
+          // No rows returned
+          setConcernDetails(null);
+        } else {
+          throw concernError;
+        }
+      } else if (concernData) {
+        // Fetch timeline for this concern
+        const { data: timelineData, error: timelineError } = await supabase
+          .from('concern_timeline')
+          .select('*')
+          .eq('concern_id', concernData.id)
+          .order('created_at', { ascending: true });
+
+        if (timelineError) throw timelineError;
+
+        // Format the data
+        const formattedConcern: ConcernDetails = {
+          id: concernData.concern_number,
+          subject: concernData.subject,
+          category: concernData.category,
+          status: concernData.status as ConcernStatus,
+          severity: concernData.severity,
+          submittedAt: concernData.created_at,
+          timeline: timelineData?.map(t => ({
+            date: new Date(t.created_at).toLocaleString('en-US', {
+              year: 'numeric',
+              month: '2-digit',
+              day: '2-digit',
+              hour: '2-digit',
+              minute: '2-digit',
+              hour12: true
+            }),
+            title: t.title,
+            description: t.description
+          })) || []
+        };
+
+        setConcernDetails(formattedConcern);
+      }
+    } catch (error: any) {
+      console.error('Error fetching concern:', error);
+      toast({
+        title: "Error",
+        description: "Failed to fetch concern details. Please try again.",
+        variant: "destructive"
+      });
       setConcernDetails(null);
+    } finally {
+      setIsSearching(false);
     }
-
-    setIsSearching(false);
   };
 
   return (
