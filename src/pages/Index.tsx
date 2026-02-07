@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { FileText, Search, Users, Shield, ArrowRight, CheckCircle, MapPin } from "lucide-react";
+import { FileText, Search, Users, Shield, ArrowRight, CheckCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import MainLayout from "@/components/layout/MainLayout";
 
@@ -62,17 +62,6 @@ const Index = () => {
                 className="border-primary-foreground/30 text-primary-foreground hover:bg-primary-foreground/10 hover:text-primary-foreground text-base px-8"
               >
                 <Link to="/track-concern">Track Your Concern</Link>
-              </Button>
-              <Button
-                asChild
-                size="lg"
-                variant="secondary"
-                className="bg-white/10 hover:bg-white/20 text-primary-foreground border-none text-base px-8 backdrop-blur-sm"
-              >
-                <Link to="/geotag-tool">
-                  <MapPin className="mr-2 h-5 w-5" />
-                  Geotag Tool
-                </Link>
               </Button>
             </div>
           </div>

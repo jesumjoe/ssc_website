@@ -50,7 +50,7 @@ const SubmitConcern = () => {
     "Sports & Recreation",
     "Events & Activities",
     "Safety & Security",
-    "Other",
+    "Others",
   ];
 
   const handleSubmit = async (e: React.FormEvent) => {
