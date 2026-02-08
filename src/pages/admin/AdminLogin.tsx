@@ -28,6 +28,8 @@ const AdminLogin = () => {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    const startTime = Date.now();
+    console.log("[Login] Starting login process...");
     setIsLoading(true);
 
     try {
@@ -40,23 +42,58 @@ const AdminLogin = () => {
       if (authError) throw authError;
 
       if (authData.user) {
-        // 2. Fetch the user's role from admin_users table
+        const authEmail = authData.user.email?.toLowerCase();
+        const currentAuthId = authData.user.id;
+
+        console.log("[Login] Successful Auth. Email:", authEmail, "ID:", currentAuthId);
+
+        // 2. Fetch the user's role from admin_users table by EMAIL (case-insensitive)
         const { data: userData, error: userError } = await supabase
           .from("admin_users")
-          .select("role")
-          .eq("id", authData.user.id)
-          .single();
+          .select("*")
+          .ilike("email", authEmail || "");
 
-        if (userError) throw new Error("User record not found in admin database.");
+        if (userError) {
+          console.error("[Login] Database error during email lookup:", userError);
+          throw new Error("Internal database error. Please check RLS policies.");
+        }
 
-        const userRole = userData.role;
+        // Handle missing record
+        if (!userData || userData.length === 0) {
+          console.warn("[Login] No record found in admin_users for email:", authEmail);
+          toast({
+            title: "Admin Access Required",
+            description: `No admin profile found for ${authEmail}. Please ensure your email is added to the admin_users table in Supabase.`,
+            variant: "destructive",
+          });
+          return;
+        }
+
+        const adminProfile = userData[0];
+        console.log("[Login] Found admin profile:", adminProfile);
+
+        // 3. Auto-link the ID if it doesn't match the current Auth ID
+        if (adminProfile.id !== currentAuthId) {
+          console.log("[Login] Linking Auth ID to admin record...");
+          const { error: updateError } = await supabase
+            .from("admin_users")
+            .update({ id: currentAuthId })
+            .eq("email", adminProfile.email);
+
+          if (updateError) {
+            console.error("[Login] Failed to link ID:", updateError);
+            // We don't throw here, just log it. They might still get access if RLS allows.
+          }
+        }
+
+        const userRole = adminProfile.role;
 
         toast({
           title: "Login Successful",
           description: `Welcome back! Logged in as ${userRole.toUpperCase()} Representative.`,
         });
 
-        // 3. Navigate to dashboard with the correct role
+        // 4. Navigate to dashboard with the correct role
         navigate(`/admin/dashboard?role=${userRole}`);
       }
     } catch (error: any) {

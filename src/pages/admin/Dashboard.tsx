@@ -10,6 +10,13 @@ import {
   Bell,
   ChevronRight,
   Users,
+  User,
+  Phone,
+  Mail,
+  BookOpen,
+  School,
+  AlertCircle,
+  Tag,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatusBadge, SeverityBadge, ConcernStatus } from "@/components/ui/status-badge";
@@ -39,6 +46,9 @@ const Dashboard = () => {
   const [role, setRole] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"pending" | "reviewed" | "all">("pending");
   const [concerns, setConcerns] = useState<Concern[]>([]);
+  const [userData, setUserData] = useState<any>(null);
+  const [partnerData, setPartnerData] = useState<any>(null);
+  const [subordinates, setSubordinates] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const handleSignOut = async () => {
@@ -71,39 +81,54 @@ const Dashboard = () => {
           return;
         }
 
-        // 2. Fetch actual role from database
-        const { data: userData, error: userError } = await supabase
+        // 2. Fetch complete user data
+        const { data: adminData, error: userError } = await supabase
           .from('admin_users')
-          .select('role')
+          .select('*')
           .eq('id', user.id)
           .single();
 
-        if (userError || !userData) throw new Error("Could not verify your role.");
-        const userRole = userData.role;
-        setRole(userRole);
+        if (userError || !adminData) throw new Error("Could not verify your role.");
+        setRole(adminData.role);
+        setUserData(adminData);
 
-        // 3. Build Concerns Query based on role
-        let query = supabase.from('concerns').select('*');
+        // 3. Parallelize fetching concerns, assignments, and role-specific data
+        let concernsQuery = supabase.from('concerns').select('*');
 
-        // Faculty should only see escalated concerns (Data security handled by RLS, but query filtering for UX)
-        if (userRole === 'faculty') {
-          query = query.eq('status', 'escalated');
+        if (adminData.role === 'faculty') {
+          concernsQuery = concernsQuery.or('status.eq.escalated,is_flagship.eq.true,is_open_forum.eq.true');
         }
 
-        const { data: concernsData, error: concernsError } = await query.order('created_at', { ascending: false });
-        if (concernsError) throw concernsError;
+        const [concernsResult, assignmentsResult, supplementaryResult] = await Promise.all([
+          concernsQuery.order('created_at', { ascending: false }),
+          supabase.from('concern_assignments').select('concern_id, admin_users(id, full_name, role)'),
+          (async () => {
+            if (adminData.role === 'ssc' && adminData.partner_id) {
+              return supabase.from('admin_users').select('*').eq('id', adminData.partner_id).single();
+            } else if (adminData.role === 'usc' || adminData.role === 'faculty') {
+              return supabase.from('admin_users').select('*').eq('parent_id', user.id);
+            }
+            return { data: null };
+          })()
+        ]);
 
-        // 4. Fetch Assignments
-        const { data: assignmentsData, error: assignmentsError } = await supabase
-          .from('concern_assignments')
-          .select('concern_id, admin_users(id, full_name, role)');
+        if (concernsResult.error) throw concernsResult.error;
+        if (assignmentsResult.error) throw assignmentsResult.error;
 
-        if (assignmentsError) throw assignmentsError;
+        // Set supplementary data
+        if (adminData.role === 'ssc') {
+          setPartnerData(supplementaryResult.data);
+        } else {
+          setSubordinates((supplementaryResult.data as any) || []);
+        }
+
+        const concernsData = concernsResult.data;
+        const assignmentsData = assignmentsResult.data;
 
         if (concernsData) {
           const formattedConcerns: Concern[] = concernsData.map(c => {
-            const concernAssignments = assignmentsData
-              ?.filter(a => a.concern_id === c.id)
+            const concernAssignments = (assignmentsData as any)
+              ?.filter((a: any) => a.concern_id === c.id)
               .map((a: any) => ({
                 id: a.admin_users.id,
                 full_name: a.admin_users.full_name,
@@ -136,7 +161,7 @@ const Dashboard = () => {
     };
 
     fetchData();
-  }, [navigate]);
+  }, [navigate, toast]);
 
   const filteredConcerns = concerns.filter((concern) => {
     if (activeTab === "pending") return concern.status === "pending";
@@ -228,10 +253,16 @@ const Dashboard = () => {
                 </span>
               </Button>
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center">
-                  <span className="text-primary-foreground text-sm font-medium">JD</span>
+                <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center overflow-hidden">
+                  {userData?.avatar_url ? (
+                    <img src={userData.avatar_url} alt={userData.full_name} className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="text-primary-foreground text-sm font-medium">
+                      {userData?.full_name?.split(' ').map((n: string) => n[0]).join('').toUpperCase() || 'AD'}
+                    </span>
+                  )}
                 </div>
-                <span className="text-sm font-medium hidden sm:block">John Doe</span>
+                <span className="text-sm font-medium hidden sm:block">{userData?.full_name || 'Admin'}</span>
               </div>
             </div>
           </div>
@@ -239,6 +270,124 @@ const Dashboard = () => {
 
         {/* Dashboard Content */}
         <div className="p-6">
+          {/* Role-Specific Profile Section */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            {/* Main User Profile */}
+            <div className="bg-card rounded-xl border p-6 shadow-sm">
+              <div className="flex items-center gap-4 mb-6">
+                <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden">
+                  {userData?.avatar_url ? (
+                    <img src={userData.avatar_url} alt={userData.full_name} className="w-full h-full object-cover" />
+                  ) : (
+                    <User className="h-8 w-8 text-primary" />
+                  )}
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-foreground">{userData?.full_name}</h2>
+                  <p className="text-sm text-muted-foreground uppercase font-semibold">{role}</p>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex items-center gap-3 text-sm">
+                  <Mail className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-foreground">{userData?.email}</span>
+                </div>
+                {userData?.phone_number && (
+                  <div className="flex items-center gap-3 text-sm">
+                    <Phone className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-foreground">{userData.phone_number}</span>
+                  </div>
+                )}
+                {userData?.class && (
+                  <div className="flex items-center gap-3 text-sm">
+                    <BookOpen className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-foreground">Class: {userData.class}</span>
+                  </div>
+                )}
+                {userData?.department && (
+                  <div className="flex items-center gap-3 text-sm">
+                    <Tag className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-foreground">Dept: {userData.department}</span>
+                  </div>
+                )}
+                {userData?.school && (
+                  <div className="flex items-center gap-3 text-sm">
+                    <School className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-foreground">School: {userData.school}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Role-Specific Secondary Profiles (Partner/Subordinates Summary) */}
+            {role === 'ssc' && partnerData && (
+              <div className="bg-card rounded-xl border p-6 shadow-sm border-primary/20 bg-primary/5">
+                <h3 className="text-sm font-bold uppercase tracking-wider text-primary mb-4">SSC Partner</h3>
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center overflow-hidden">
+                    {partnerData.avatar_url ? (
+                      <img src={partnerData.avatar_url} alt={partnerData.full_name} className="w-full h-full object-cover" />
+                    ) : (
+                      <User className="h-6 w-6 text-primary" />
+                    )}
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-foreground">{partnerData.full_name}</h4>
+                    <p className="text-xs text-muted-foreground">{partnerData.email}</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="flex items-center gap-2">
+                    <Phone className="h-3 w-3 text-muted-foreground" />
+                    <span>{partnerData.phone_number || 'N/A'}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <BookOpen className="h-3 w-3 text-muted-foreground" />
+                    <span>{partnerData.class || 'N/A'}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {role === 'usc' && (
+              <div className="bg-card rounded-xl border p-6 shadow-sm">
+                <h3 className="text-sm font-bold uppercase tracking-wider text-foreground mb-4">SSCs Under Management</h3>
+                <div className="flex flex-wrap gap-2">
+                  {subordinates.map(ssc => (
+                    <div key={ssc.id} className="flex items-center gap-2 bg-muted px-3 py-1.5 rounded-full text-xs">
+                      <div className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center overflow-hidden">
+                        {ssc.avatar_url ? (
+                          <img src={ssc.avatar_url} className="w-full h-full object-cover" />
+                        ) : ssc.full_name[0]}
+                      </div>
+                      <span>{ssc.full_name}</span>
+                    </div>
+                  ))}
+                  {subordinates.length === 0 && <p className="text-xs text-muted-foreground">No SSCs assigned yet.</p>}
+                </div>
+              </div>
+            )}
+
+            {role === 'faculty' && (
+              <div className="bg-card rounded-xl border p-6 shadow-sm">
+                <h3 className="text-sm font-bold uppercase tracking-wider text-foreground mb-4">USCs Under Mentorship</h3>
+                <div className="flex flex-wrap gap-2">
+                  {subordinates.map(usc => (
+                    <div key={usc.id} className="flex items-center gap-2 bg-muted px-3 py-1.5 rounded-full text-xs">
+                      <div className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center overflow-hidden">
+                        {usc.avatar_url ? (
+                          <img src={usc.avatar_url} className="w-full h-full object-cover" />
+                        ) : usc.full_name[0]}
+                      </div>
+                      <span>{usc.full_name}</span>
+                    </div>
+                  ))}
+                  {subordinates.length === 0 && <p className="text-xs text-muted-foreground">No USCs assigned yet.</p>}
+                </div>
+              </div>
+            )}
+          </div>
           {/* Stats Cards */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
             <div className="concern-card">
@@ -309,7 +458,136 @@ const Dashboard = () => {
 
           {/* Concerns List */}
           <div className="space-y-4">
-            {filteredConcerns.length > 0 ? (
+            {role === 'ssc' ? (
+              // SSC: Max 2 concerns
+              concerns.slice(0, 2).map((concern) => (
+                <div key={concern.dbId} className="concern-card flex items-center justify-between gap-4">
+                  <Link
+                    to={`/admin/concern/${concern.id}?role=${role}`}
+                    className="flex-1 min-w-0"
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="font-mono text-sm text-muted-foreground">{concern.id}</span>
+                      <StatusBadge status={concern.status} />
+                    </div>
+                    <h3 className="font-semibold text-foreground mb-1 truncate">{concern.subject}</h3>
+                    <p className="text-sm text-muted-foreground">{concern.category}</p>
+                  </Link>
+                  <div className="flex items-center gap-4">
+                    <div className="flex flex-col items-center">
+                      <input
+                        type="checkbox"
+                        checked={concern.status === 'resolved'}
+                        onChange={async () => {
+                          const newStatus = concern.status === 'resolved' ? 'pending' : 'resolved';
+                          const { error } = await supabase
+                            .from('concerns')
+                            .update({ status: newStatus })
+                            .eq('id', concern.dbId);
+                          if (!error) {
+                            setConcerns(prev => prev.map(c => c.dbId === concern.dbId ? { ...c, status: newStatus as ConcernStatus } : c));
+                          }
+                        }}
+                        className="w-5 h-5 rounded border-gray-300 text-primary focus:ring-primary"
+                      />
+                      <span className="text-[10px] mt-1 text-muted-foreground">Solved</span>
+                    </div>
+                    <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                  </div>
+                </div>
+              ))
+            ) : role === 'usc' ? (
+              // USC: Grouped by SSC
+              subordinates.map(ssc => {
+                const sscConcerns = concerns.filter(c => c.assignments.some(a => a.id === ssc.id));
+                return (
+                  <div key={ssc.id} className="mb-6">
+                    <h3 className="text-sm font-bold text-muted-foreground uppercase mb-3 px-2 flex items-center gap-2">
+                      <User className="h-4 w-4" /> {ssc.full_name}'s Assigned Concerns
+                    </h3>
+                    <div className="space-y-3">
+                      {sscConcerns.map(concern => (
+                        <Link
+                          key={concern.dbId}
+                          to={`/admin/concern/${concern.id}?role=${role}`}
+                          className="concern-card block bg-card/50 hover:bg-card transition-colors"
+                        >
+                          <div className="flex items-center justify-between gap-4">
+                            <div>
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="font-mono text-xs text-muted-foreground">{concern.id}</span>
+                                <StatusBadge status={concern.status} />
+                              </div>
+                              <h4 className="font-medium text-foreground text-sm">{concern.subject}</h4>
+                            </div>
+                            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                          </div>
+                        </Link>
+                      ))}
+                      {sscConcerns.length === 0 && <p className="text-xs text-muted-foreground italic px-4">No concerns assigned to this SSC.</p>}
+                    </div>
+                  </div>
+                );
+              })
+            ) : role === 'faculty' ? (
+              // Faculty: Huge Concerns (Flagship/Open Forum)
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-sm font-bold text-destructive uppercase mb-3 px-2 flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4" /> Flagship Concerns (Immediate Action)
+                  </h3>
+                  <div className="space-y-3">
+                    {concerns.filter(c => (c as any).is_flagship).map(concern => (
+                      <Link
+                        key={concern.dbId}
+                        to={`/admin/concern/${concern.id}?role=${role}`}
+                        className="concern-card block border-destructive/20 bg-destructive/5"
+                      >
+                        <div className="flex items-center justify-between gap-4">
+                          <div>
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="font-mono text-xs text-muted-foreground">{concern.id}</span>
+                              <span className="bg-destructive text-destructive-foreground text-[10px] px-1.5 py-0.5 rounded font-bold uppercase">Flagship</span>
+                            </div>
+                            <h4 className="font-bold text-foreground">{concern.subject}</h4>
+                          </div>
+                          <ChevronRight className="h-5 w-5 text-destructive" />
+                        </div>
+                      </Link>
+                    ))}
+                    {concerns.filter(c => (c as any).is_flagship).length === 0 && <p className="text-xs text-muted-foreground italic px-4">No flagship concerns at the moment.</p>}
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-sm font-bold text-info uppercase mb-3 px-2 flex items-center gap-2">
+                    <Users className="h-4 w-4" /> Open Forum Discussions
+                  </h3>
+                  <div className="space-y-3">
+                    {concerns.filter(c => (c as any).is_open_forum).map(concern => (
+                      <Link
+                        key={concern.dbId}
+                        to={`/admin/concern/${concern.id}?role=${role}`}
+                        className="concern-card block border-info/20 bg-info/5"
+                      >
+                        <div className="flex items-center justify-between gap-4">
+                          <div>
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="font-mono text-xs text-muted-foreground">{concern.id}</span>
+                              <span className="bg-info text-info-foreground text-[10px] px-1.5 py-0.5 rounded font-bold uppercase">Open Forum</span>
+                            </div>
+                            <h4 className="font-bold text-foreground">{concern.subject}</h4>
+                          </div>
+                          <ChevronRight className="h-5 w-5 text-info" />
+                        </div>
+                      </Link>
+                    ))}
+                    {concerns.filter(c => (c as any).is_open_forum).length === 0 && <p className="text-xs text-muted-foreground italic px-4">No open forum concerns.</p>}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              // Default/All
               filteredConcerns.map((concern) => (
                 <Link
                   key={concern.dbId}
@@ -330,26 +608,6 @@ const Dashboard = () => {
                       <p className="text-sm text-muted-foreground mb-3 line-clamp-1">
                         {concern.category} • {new Date(concern.submittedAt).toLocaleDateString()}
                       </p>
-
-                      {/* Assigned Admins Row */}
-                      {concern.assignments.length > 0 && (
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Assigned:</span>
-                          <div className="flex -space-x-2">
-                            {concern.assignments.map((admin) => (
-                              <div
-                                key={admin.id}
-                                className="w-6 h-6 rounded-full border-2 border-background bg-primary/10 flex items-center justify-center"
-                                title={`${admin.full_name} (${admin.role.toUpperCase()})`}
-                              >
-                                <span className="text-[8px] font-bold text-primary">
-                                  {admin.full_name.split(' ').map(n => n[0]).join('').toUpperCase()}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
                     </div>
                     <div className="hidden sm:flex flex-col items-end gap-2">
                       {concern.severity && <SeverityBadge level={concern.severity} />}
@@ -358,12 +616,14 @@ const Dashboard = () => {
                   </div>
                 </Link>
               ))
-            ) : (
+            )}
+
+            {concerns.length === 0 && !isLoading && (
               <div className="bg-card rounded-lg border p-8 text-center">
                 <CheckCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <h3 className="text-lg font-semibold mb-2">No concerns in this category</h3>
+                <h3 className="text-lg font-semibold mb-2">No concerns found</h3>
                 <p className="text-muted-foreground">
-                  You're all caught up! Check back later for new concerns.
+                  Everything is clear for now.
                 </p>
               </div>
             )}
