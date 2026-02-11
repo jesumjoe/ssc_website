@@ -1,34 +1,56 @@
-# Logs
-logs
-*.log
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Testing
+coverage/
+*.lcov
+
+# Production
+build/
+dist/
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.*.local
+
+# Debug files
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
+*_errors.json
+*_errors.txt
+debug_*.js
+debug_*.ts
+lint_*.txt
+push_output.txt
 
-node_modules
-dist
-dist-ssr
-*.local
-
-# Editor directories and files
-.vscode/*
+# Editor directories
+.vscode/
 !.vscode/extensions.json
-.idea
-.DS_Store
+.idea/
+*.swp
+*.swo
+*~
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
-*.sw?
 
-# Debug files
-*_errors.json
-lint_output.txt
-debug_status.js
-lint_errors.txt
-push_output.txt
+# OS files
+.DS_Store
+Thumbs.db
 
-# Security
-.env
+# Lock files (using npm)
+bun.lockb
+
+# Local development
+*.local
+.cache/
+logs/
+*.log
