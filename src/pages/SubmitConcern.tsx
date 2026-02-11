@@ -34,29 +34,23 @@ const SubmitConcern = () => {
     category: "",
     subject: "",
     description: "",
+    foodLocation: "",
   });
 
   const [geotaggedImage, setGeotaggedImage] = useState<string | null>(null);
 
   const categories = [
-    "Academic Issues",
-    "Infrastructure",
-    "Faculty Related",
-    "Administrative",
-    "Hostel/Accommodation",
-    "Canteen/Mess",
-    "Transportation",
-    "Library",
-    "Sports & Recreation",
-    "Events & Activities",
-    "Safety & Security",
-    "Others",
+    "Academic",
+    "Non-Academic",
+    "Food",
+    "Hostel",
   ];
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!geotaggedImage) {
+    // Validation: Photo is required only for non-Academic concerns
+    if (formData.category !== "Academic" && !geotaggedImage) {
       toast({
         title: "Photo Required",
         description: "Please capture a geotagged photo of the concern area before submitting.",
@@ -107,7 +101,9 @@ const SubmitConcern = () => {
             department: isAnonymous ? null : formData.department,
             category: formData.category,
             subject: formData.subject,
-            description: formData.description,
+            description: formData.category === "Food" && formData.foodLocation
+              ? `[Location: ${formData.foodLocation}]\n\n${formData.description}`
+              : formData.description,
             is_anonymous: isAnonymous,
             image_url: imageUrl,
             status: 'pending'
@@ -178,6 +174,7 @@ const SubmitConcern = () => {
                       category: "",
                       subject: "",
                       description: "",
+                      foodLocation: "",
                     });
                     setGeotaggedImage(null);
                   }}
@@ -304,6 +301,25 @@ const SubmitConcern = () => {
                   </Select>
                 </div>
 
+                {formData.category === "Food" && (
+                  <div className="space-y-2 animate-fade-in">
+                    <Label htmlFor="foodLocation">Canteen Location *</Label>
+                    <Select
+                      value={formData.foodLocation}
+                      onValueChange={(value) => setFormData({ ...formData, foodLocation: value })}
+                      required
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select Canteen" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="North Canteen">North Canteen</SelectItem>
+                        <SelectItem value="South Canteen">South Canteen</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
                 <div className="space-y-2">
                   <Label htmlFor="subject">Subject *</Label>
                   <Input
@@ -330,16 +346,19 @@ const SubmitConcern = () => {
             </div>
 
             {/* Geotagged Photo Upload */}
-            <div className="form-section">
-              <h2 className="text-lg font-semibold mb-4">Evidence (Required)</h2>
-              <div className="space-y-4">
-                <Label className="text-destructive">Upload Geotagged Photo *</Label>
-                <p className="text-sm text-muted-foreground mb-2">
-                  Take a photo of the concern area. Location and time will be automatically stamped on the image.
-                </p>
-                <GeotagCamera onCapture={setGeotaggedImage} />
+            {/* Geotagged Photo Upload - Hide for Academic */}
+            {formData.category !== "Academic" && (
+              <div className="form-section">
+                <h2 className="text-lg font-semibold mb-4">Evidence (Required)</h2>
+                <div className="space-y-4">
+                  <Label className="text-destructive">Upload Geotagged Photo *</Label>
+                  <p className="text-sm text-muted-foreground mb-2">
+                    Take a photo of the concern area. Location and time will be automatically stamped on the image.
+                  </p>
+                  <GeotagCamera onCapture={setGeotaggedImage} />
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Submit Button */}
             <div className="flex justify-end">

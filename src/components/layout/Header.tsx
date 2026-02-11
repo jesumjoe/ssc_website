@@ -21,18 +21,13 @@ const Header = () => {
       <div className="container-wide">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
-          <Link to="/" className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-accent flex items-center justify-center">
-              <span className="text-accent-foreground font-bold text-lg">SC</span>
-            </div>
-            <div className="hidden sm:block">
-              <h1 className="text-primary-foreground font-semibold text-lg leading-tight">
-                The Student Council
-              </h1>
-              <p className="text-primary-foreground/70 text-xs">
-                Voice of the Students
-              </p>
-            </div>
+          <Link to="/" className="flex items-center">
+            <img
+              src="/logo-light.png?v=1"
+              alt="Student Council"
+              className="w-auto object-contain"
+              style={{ height: '56px' }}
+            />
           </Link>
 
           {/* Desktop Navigation */}
@@ -67,11 +62,10 @@ const Header = () => {
                 <Link
                   key={link.href}
                   to={link.href}
-                  className={`px-4 py-3 rounded-lg transition-colors ${
-                    isActive(link.href)
-                      ? "bg-primary-foreground/20 text-primary-foreground"
-                      : "text-primary-foreground/80 hover:bg-primary-foreground/10"
-                  }`}
+                  className={`px-4 py-3 rounded-lg transition-colors ${isActive(link.href)
+                    ? "bg-primary-foreground/20 text-primary-foreground"
+                    : "text-primary-foreground/80 hover:bg-primary-foreground/10"
+                    }`}
                   onClick={() => setMobileMenuOpen(false)}
                 >
                   {link.label}

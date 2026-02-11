@@ -114,8 +114,13 @@ const AdminLogin = () => {
         <div className="w-full max-w-md px-4">
           <div className="bg-card rounded-lg border p-8 card-elevated animate-fade-in">
             <div className="text-center mb-8">
-              <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
-                <Shield className="h-8 w-8 text-primary" />
+              <div className="w-full flex items-center justify-center mb-6">
+                <img
+                  src="/logo-admin-transparent.png"
+                  alt="Student Council Logo"
+                  className="w-auto object-contain"
+                  style={{ height: '96px' }}
+                />
               </div>
               <h1 className="text-2xl font-bold text-foreground">Admin Portal</h1>
               <p className="text-muted-foreground mt-2">

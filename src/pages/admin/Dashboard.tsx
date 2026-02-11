@@ -32,6 +32,8 @@ interface Concern {
   status: ConcernStatus;
   severity?: 1 | 2 | 3 | 4 | 5;
   submittedAt: string;
+  is_flagship?: boolean;
+  is_open_forum?: boolean;
   assignments: {
     id: string;
     full_name: string;
@@ -40,11 +42,14 @@ interface Concern {
 }
 
 const Dashboard = () => {
+  // ...
+
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [role, setRole] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"pending" | "reviewed" | "all">("pending");
+  // Unified filter state
+  const [activeTab, setActiveTab] = useState<ConcernStatus | "all" | "reviewed">("pending");
   const [concerns, setConcerns] = useState<Concern[]>([]);
   const [userData, setUserData] = useState<any>(null);
   const [partnerData, setPartnerData] = useState<any>(null);
@@ -55,11 +60,14 @@ const Dashboard = () => {
     try {
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
+
       toast({
         title: "Signed Out",
         description: "You have been successfully signed out.",
       });
-      navigate("/admin");
+
+      // Force navigation to admin login
+      navigate("/admin", { replace: true });
     } catch (error: any) {
       toast({
         title: "Error",
@@ -143,10 +151,22 @@ const Dashboard = () => {
               status: c.status as ConcernStatus,
               severity: c.severity,
               submittedAt: c.created_at,
+              is_flagship: c.is_flagship,
+              is_open_forum: c.is_open_forum,
               assignments: concernAssignments
             };
           });
-          setConcerns(formattedConcerns);
+
+          // Filter to show only assigned concerns for specific roles
+          const assignedConcerns = formattedConcerns.filter(c => {
+            const isAssigned = c.assignments.some(a => a.id === user.id);
+            if (adminData.role === 'faculty') {
+              return isAssigned || c.is_flagship || c.is_open_forum;
+            }
+            return isAssigned;
+          });
+
+          setConcerns(assignedConcerns);
         }
       } catch (error: any) {
         console.error('Error fetching dashboard data:', error);
@@ -163,16 +183,33 @@ const Dashboard = () => {
     fetchData();
   }, [navigate, toast]);
 
+  // Unified Filtering Logic
+  // Unified Filtering Logic
   const filteredConcerns = concerns.filter((concern) => {
-    if (activeTab === "pending") return concern.status === "pending";
-    if (activeTab === "reviewed") return concern.status !== "pending";
-    return true;
+    if (activeTab === "all") return true;
+    if (activeTab === "reviewed") return concern.status !== "pending" && concern.status !== "reviewing";
+
+    // Special logic for Pending tab based on Role
+    if (activeTab === "pending") {
+      if (role === "usc") return concern.status === "reviewing";
+      if (role === "faculty") return concern.status === "escalated";
+      // Default pending for others
+      return concern.status === "pending";
+    }
+
+    // Fallback for other tabs (e.g. resolved, escalated)
+    return concern.status === activeTab;
   });
 
   const stats = {
     total: concerns.length,
-    pending: concerns.filter((c) => c.status === "pending").length,
+    pending: role === "usc"
+      ? concerns.filter((c) => c.status === "reviewing").length
+      : role === "faculty"
+        ? concerns.filter((c) => c.status === "escalated").length
+        : concerns.filter((c) => c.status === "pending").length,
     reviewing: concerns.filter((c) => c.status === "reviewing").length,
+    escalated: concerns.filter((c) => c.status === "escalated").length,
     resolved: concerns.filter((c) => c.status === "resolved").length,
   };
 
@@ -195,39 +232,67 @@ const Dashboard = () => {
       {/* Sidebar */}
       <aside className="w-64 bg-sidebar fixed h-full hidden lg:block">
         <div className="p-6">
-          <div className="flex items-center gap-3 mb-8">
-            <div className="w-10 h-10 rounded-lg bg-sidebar-primary flex items-center justify-center">
-              <span className="text-sidebar-primary-foreground font-bold">SC</span>
-            </div>
-            <div>
-              <h1 className="text-sidebar-foreground font-semibold">Student Council</h1>
-              <p className="text-sidebar-foreground/60 text-xs uppercase">{role} Portal</p>
-            </div>
+          <div className="mb-8 flex justify-center">
+            <img
+              src="/logo-admin-transparent.png"
+              alt="Student Council"
+              className="object-contain"
+              style={{ width: '100%', height: 'auto', maxHeight: '100px' }}
+            />
           </div>
 
           <nav className="space-y-1">
-            <button className="sidebar-link sidebar-link-active w-full">
+            <button
+              onClick={() => setActiveTab("all")}
+              className={`sidebar-link w-full ${activeTab === "all" ? "sidebar-link-active" : ""}`}
+            >
               <LayoutDashboard className="h-5 w-5" />
               Dashboard
             </button>
-            <button className="sidebar-link w-full">
+            <button
+              onClick={() => setActiveTab("all")}
+              className={`sidebar-link w-full ${activeTab === "all" ? "sidebar-link-active" : ""}`}
+            >
               <FileText className="h-5 w-5" />
               All Concerns
             </button>
-            <button className="sidebar-link w-full">
+            <button
+              onClick={() => setActiveTab("pending")}
+              className={`sidebar-link w-full ${activeTab === "pending" ? "sidebar-link-active" : ""}`}
+            >
               <Clock className="h-5 w-5" />
               Pending Review
             </button>
-            <button className="sidebar-link w-full">
+            <button
+              onClick={() => setActiveTab("resolved")}
+              className={`sidebar-link w-full ${activeTab === "resolved" ? "sidebar-link-active" : ""}`}
+            >
               <CheckCircle className="h-5 w-5" />
               Resolved
             </button>
             {role === "usc" && (
-              <button className="sidebar-link w-full">
+              <button
+                onClick={() => setActiveTab("escalated")}
+                className={`sidebar-link w-full ${activeTab === "escalated" ? "sidebar-link-active" : ""}`}
+              >
                 <AlertTriangle className="h-5 w-5" />
                 Escalated
               </button>
             )}
+            <button
+              onClick={() => navigate("/admin/library")}
+              className="sidebar-link w-full"
+            >
+              <BookOpen className="h-5 w-5" />
+              Concern Library
+            </button>
+            <button
+              onClick={() => navigate("/admin/open-forum")}
+              className="sidebar-link w-full"
+            >
+              <Users className="h-5 w-5" />
+              Open Forum
+            </button>
           </nav>
         </div>
 
@@ -408,21 +473,32 @@ const Dashboard = () => {
                 </div>
                 <div>
                   <p className="text-2xl font-bold text-foreground">{stats.pending}</p>
-                  <p className="text-sm text-muted-foreground">Pending</p>
+                  <p className="text-sm text-muted-foreground">Pending Action</p>
                 </div>
               </div>
             </div>
+
+            {/* Dynamic Card: Under Review (for SSC) vs Escalated (for USC) */}
             <div className="concern-card">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-info/10 flex items-center justify-center">
-                  <Users className="h-5 w-5 text-info" />
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${role === 'usc' ? 'bg-destructive/10' : 'bg-info/10'}`}>
+                  {role === 'usc' ? (
+                    <AlertTriangle className="h-5 w-5 text-destructive" />
+                  ) : (
+                    <Users className="h-5 w-5 text-info" />
+                  )}
                 </div>
                 <div>
-                  <p className="text-2xl font-bold text-foreground">{stats.reviewing}</p>
-                  <p className="text-sm text-muted-foreground">Under Review</p>
+                  <p className="text-2xl font-bold text-foreground">
+                    {role === 'usc' ? stats.escalated : stats.reviewing}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {role === 'usc' ? 'Escalated' : 'Under Review'}
+                  </p>
                 </div>
               </div>
             </div>
+
             <div className="concern-card">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-lg bg-success/10 flex items-center justify-center">
@@ -459,8 +535,8 @@ const Dashboard = () => {
           {/* Concerns List */}
           <div className="space-y-4">
             {role === 'ssc' ? (
-              // SSC: Max 2 concerns
-              concerns.slice(0, 2).map((concern) => (
+              // SSC: Max 2 concerns from filtered list
+              filteredConcerns.slice(0, 2).map((concern) => (
                 <div key={concern.dbId} className="concern-card flex items-center justify-between gap-4">
                   <Link
                     to={`/admin/concern/${concern.id}?role=${role}`}
@@ -495,49 +571,56 @@ const Dashboard = () => {
                     <ChevronRight className="h-5 w-5 text-muted-foreground" />
                   </div>
                 </div>
+
               ))
-            ) : role === 'usc' ? (
-              // USC: Grouped by SSC
-              subordinates.map(ssc => {
-                const sscConcerns = concerns.filter(c => c.assignments.some(a => a.id === ssc.id));
-                return (
-                  <div key={ssc.id} className="mb-6">
-                    <h3 className="text-sm font-bold text-muted-foreground uppercase mb-3 px-2 flex items-center gap-2">
-                      <User className="h-4 w-4" /> {ssc.full_name}'s Assigned Concerns
-                    </h3>
-                    <div className="space-y-3">
-                      {sscConcerns.map(concern => (
+            ) : role === 'faculty' ? (
+              // Faculty: Assigned Escalations + Huge Concerns (Flagship/Open Forum)
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-sm font-bold text-foreground uppercase mb-3 px-2 flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4" /> Assigned Escalations
+                  </h3>
+                  <div className="space-y-3">
+                    {filteredConcerns
+                      .filter(c => c.status === 'escalated' && !c.is_flagship && !c.is_open_forum)
+                      .map(concern => (
                         <Link
                           key={concern.dbId}
                           to={`/admin/concern/${concern.id}?role=${role}`}
-                          className="concern-card block bg-card/50 hover:bg-card transition-colors"
+                          className="concern-card block border-l-4 border-l-warning"
                         >
-                          <div className="flex items-center justify-between gap-4">
-                            <div>
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 mb-1">
-                                <span className="font-mono text-xs text-muted-foreground">{concern.id}</span>
-                                <StatusBadge status={concern.status} />
+                                <span className="font-mono text-sm text-muted-foreground">
+                                  {concern.id}
+                                </span>
+                                {concern.severity && <SeverityBadge level={concern.severity} />}
                               </div>
-                              <h4 className="font-medium text-foreground text-sm">{concern.subject}</h4>
+                              <h3 className="font-semibold text-foreground mb-1 truncate">
+                                {concern.subject}
+                              </h3>
+                              <p className="text-sm text-muted-foreground line-clamp-1">
+                                {concern.category} • {new Date(concern.submittedAt).toLocaleDateString()}
+                              </p>
                             </div>
-                            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                            <ChevronRight className="h-5 w-5 text-muted-foreground" />
                           </div>
                         </Link>
+
                       ))}
-                      {sscConcerns.length === 0 && <p className="text-xs text-muted-foreground italic px-4">No concerns assigned to this SSC.</p>}
-                    </div>
+                    {filteredConcerns.filter(c => c.status === 'escalated' && !c.is_flagship && !c.is_open_forum).length === 0 && (
+                      <p className="text-xs text-muted-foreground italic px-4">No escalated concerns assigned to you.</p>
+                    )}
                   </div>
-                );
-              })
-            ) : role === 'faculty' ? (
-              // Faculty: Huge Concerns (Flagship/Open Forum)
-              <div className="space-y-6">
+                </div>
+
                 <div>
                   <h3 className="text-sm font-bold text-destructive uppercase mb-3 px-2 flex items-center gap-2">
                     <AlertTriangle className="h-4 w-4" /> Flagship Concerns (Immediate Action)
                   </h3>
                   <div className="space-y-3">
-                    {concerns.filter(c => (c as any).is_flagship).map(concern => (
+                    {filteredConcerns.filter(c => c.is_flagship).map(concern => (
                       <Link
                         key={concern.dbId}
                         to={`/admin/concern/${concern.id}?role=${role}`}
@@ -555,7 +638,7 @@ const Dashboard = () => {
                         </div>
                       </Link>
                     ))}
-                    {concerns.filter(c => (c as any).is_flagship).length === 0 && <p className="text-xs text-muted-foreground italic px-4">No flagship concerns at the moment.</p>}
+                    {filteredConcerns.filter(c => c.is_flagship).length === 0 && <p className="text-xs text-muted-foreground italic px-4">No flagship concerns matching filter.</p>}
                   </div>
                 </div>
 
@@ -564,7 +647,7 @@ const Dashboard = () => {
                     <Users className="h-4 w-4" /> Open Forum Discussions
                   </h3>
                   <div className="space-y-3">
-                    {concerns.filter(c => (c as any).is_open_forum).map(concern => (
+                    {filteredConcerns.filter(c => c.is_open_forum).map(concern => (
                       <Link
                         key={concern.dbId}
                         to={`/admin/concern/${concern.id}?role=${role}`}
@@ -582,7 +665,7 @@ const Dashboard = () => {
                         </div>
                       </Link>
                     ))}
-                    {concerns.filter(c => (c as any).is_open_forum).length === 0 && <p className="text-xs text-muted-foreground italic px-4">No open forum concerns.</p>}
+                    {filteredConcerns.filter(c => c.is_open_forum).length === 0 && <p className="text-xs text-muted-foreground italic px-4">No open forum concerns matching filter.</p>}
                   </div>
                 </div>
               </div>
@@ -618,7 +701,7 @@ const Dashboard = () => {
               ))
             )}
 
-            {concerns.length === 0 && !isLoading && (
+            {filteredConcerns.length === 0 && !isLoading && (
               <div className="bg-card rounded-lg border p-8 text-center">
                 <CheckCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                 <h3 className="text-lg font-semibold mb-2">No concerns found</h3>
@@ -629,8 +712,8 @@ const Dashboard = () => {
             )}
           </div>
         </div>
-      </main>
-    </div>
+      </main >
+    </div >
   );
 };
 

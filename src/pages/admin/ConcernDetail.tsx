@@ -12,6 +12,7 @@ import {
   AlertTriangle,
   Send,
   UserPlus,
+  Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -55,10 +56,18 @@ const ConcernDetail = () => {
     notes: "",
   });
   const [uscReview, setUSCReview] = useState({
-    severity: "",
+    severity: 0,
     escalate: "",
     notes: "",
   });
+
+  const [facultyReview, setFacultyReview] = useState({
+    response: "",
+    isOpenForum: false,
+    isFlagship: false,
+  });
+
+  const [finalResolution, setFinalResolution] = useState("");
 
   useEffect(() => {
     const fetchData = async () => {
@@ -85,7 +94,8 @@ const ConcernDetail = () => {
         const { data: concernData, error: concernError } = await supabase
           .from("concerns")
           .select("*")
-          .filter("concern_number", "eq", id)
+          .select("*")
+          .eq("concern_number", id)
           .single();
 
         if (concernError || !concernData) {
@@ -116,12 +126,16 @@ const ConcernDetail = () => {
           .eq("concern_id", concernData.id);
 
         if (assignmentError) throw assignmentError;
-        const formattedAssigned = assignmentData.map((a: any) => ({
-          id: a.admin_users.id,
-          full_name: a.admin_users.full_name,
-          role: a.admin_users.role,
-          email: a.admin_users.email,
-        }));
+
+        // Filter out assignments where admin_users might be null (e.g. deleted user or RLS hidden)
+        const formattedAssigned = assignmentData
+          .filter((a: any) => a.admin_users)
+          .map((a: any) => ({
+            id: a.admin_users.id,
+            full_name: a.admin_users.full_name,
+            role: a.admin_users.role,
+            email: a.admin_users.email,
+          }));
         setAssignedAdmins(formattedAssigned);
 
         // 4. Fetch All Admins (for assignment dropdown)
@@ -136,7 +150,7 @@ const ConcernDetail = () => {
         console.error("Error fetching concern details:", error);
         toast({
           title: "Error",
-          description: "Failed to load concern details.",
+          description: "Failed to load concern details. Check console for easier debugging.",
           variant: "destructive",
         });
       } finally {
@@ -145,7 +159,10 @@ const ConcernDetail = () => {
     };
 
     fetchData();
-  }, [id]);
+  }, [id, navigate, toast]); // Added missing dependencies
+
+  // ... (rest of code)
+
 
   const handleAssignAdmin = async () => {
     if (!selectedAdminId) return;
@@ -172,12 +189,14 @@ const ConcernDetail = () => {
         .select("admin_id, admin_users(*)")
         .eq("concern_id", concern.id);
 
-      const formattedAssigned = assignmentData?.map((a: any) => ({
-        id: a.admin_users.id,
-        full_name: a.admin_users.full_name,
-        role: a.admin_users.role,
-        email: a.admin_users.email,
-      })) || [];
+      const formattedAssigned = assignmentData
+        ?.filter((a: any) => a.admin_users)
+        .map((a: any) => ({
+          id: a.admin_users.id,
+          full_name: a.admin_users.full_name,
+          role: a.admin_users.role,
+          email: a.admin_users.email,
+        })) || [];
       setAssignedAdmins(formattedAssigned);
       setSelectedAdminId("");
     } catch (error: any) {
@@ -243,11 +262,27 @@ const ConcernDetail = () => {
         .from("concerns")
         .update({
           status: newStatus,
-          severity: parseInt(uscReview.severity),
+          severity: uscReview.severity,
         })
         .eq("id", concern.id);
 
       if (error) throw error;
+
+      if (uscReview.escalate === "yes") {
+        if (!selectedAdminId) {
+          throw new Error("Please select a faculty mentor to escalate to.");
+        }
+
+        // Assign Faculty
+        const { error: assignError } = await supabase
+          .from("concern_assignments")
+          .insert({
+            concern_id: concern.id,
+            admin_id: selectedAdminId,
+          });
+
+        if (assignError) throw assignError;
+      }
 
       // Add to timeline
       await supabase.from("concern_timeline").insert({
@@ -269,6 +304,82 @@ const ConcernDetail = () => {
       toast({
         title: "Error",
         description: error.message || "Failed to submit assessment.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleFacultySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    try {
+      const { error } = await supabase
+        .from("concerns")
+        .update({
+          faculty_response: facultyReview.response,
+          is_open_forum: facultyReview.isOpenForum,
+          is_flagship: facultyReview.isFlagship,
+        })
+        .eq("id", concern.id);
+
+      if (error) throw error;
+
+      await supabase.from("concern_timeline").insert({
+        concern_id: concern.id,
+        title: "Faculty Remarks Added",
+        description: `Faculty provided remarks. Open Forum: ${facultyReview.isOpenForum ? "Yes" : "No"}.`,
+      });
+
+      toast({
+        title: "Remarks Sent",
+        description: "Your remarks have been sent to the USC.",
+      });
+
+      // Update local state
+      setConcern({ ...concern, faculty_response: facultyReview.response });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to submit remarks.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleFinalSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    try {
+      const { error } = await supabase
+        .from("concerns")
+        .update({
+          final_response: finalResolution,
+          status: "resolved",
+        })
+        .eq("id", concern.id);
+
+      if (error) throw error;
+
+      await supabase.from("concern_timeline").insert({
+        concern_id: concern.id,
+        title: "Concern Resolved",
+        description: "USC provided final resolution message.",
+      });
+
+      toast({
+        title: "Resolved",
+        description: "Concern marked as resolved and message sent.",
+      });
+
+      navigate(`/admin/dashboard?role=${role}`);
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to submit final resolution.",
         variant: "destructive",
       });
     } finally {
@@ -443,27 +554,38 @@ const ConcernDetail = () => {
                 <div className="space-y-6">
                   <div className="space-y-3">
                     <Label>Severity Rating *</Label>
-                    <RadioGroup
-                      value={uscReview.severity}
-                      onValueChange={(value) =>
-                        setUSCReview({ ...uscReview, severity: value })
-                      }
-                      className="flex flex-wrap gap-3"
-                    >
+                    <div className="flex gap-2">
                       {[1, 2, 3, 4, 5].map((level) => (
-                        <div key={level} className="flex items-center space-x-2">
-                          <RadioGroupItem value={String(level)} id={`severity-${level}`} />
-                          <Label
-                            htmlFor={`severity-${level}`}
-                            className="cursor-pointer"
-                          >
-                            <SeverityBadge level={level as 1 | 2 | 3 | 4 | 5} />
-                          </Label>
-                        </div>
+                        <button
+                          key={level}
+                          type="button"
+                          onClick={() => setUSCReview({ ...uscReview, severity: level })}
+                          className={`
+                            w-10 h-10 rounded-full flex items-center justify-center font-bold transition-all
+                            ${uscReview.severity === level
+                              ? "ring-2 ring-offset-2 ring-primary scale-110 shadow-md"
+                              : "opacity-70 hover:opacity-100 hover:scale-105"
+                            }
+                            ${level === 1 ? "bg-green-100 text-green-700 border-green-200" : ""}
+                            ${level === 2 ? "bg-lime-100 text-lime-700 border-lime-200" : ""}
+                            ${level === 3 ? "bg-yellow-100 text-yellow-700 border-yellow-200" : ""}
+                            ${level === 4 ? "bg-orange-100 text-orange-700 border-orange-200" : ""}
+                            ${level === 5 ? "bg-red-100 text-red-700 border-red-200" : ""}
+                          `}
+                          title={`Severity Level ${level}`}
+                        >
+                          {level}
+                        </button>
                       ))}
-                    </RadioGroup>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {uscReview.severity === 1 && "Low Impact - Minor inconvenience"}
+                      {uscReview.severity === 2 && "Moderate - Needs attention"}
+                      {uscReview.severity === 3 && "Significant - Updates required"}
+                      {uscReview.severity === 4 && "High - Urgent response needed"}
+                      {uscReview.severity === 5 && "Critical - Immediate action required"}
+                    </p>
                   </div>
-
                   <div className="space-y-3">
                     <Label>Escalate to Faculty? *</Label>
                     <RadioGroup
@@ -510,6 +632,28 @@ const ConcernDetail = () => {
                     />
                   </div>
 
+                  {uscReview.escalate === "yes" && (
+                    <div className="space-y-2 animate-in fade-in slide-in-from-top-2">
+                      <Label htmlFor="assign-faculty">Select Faculty Mentor *</Label>
+                      <select
+                        id="assign-faculty"
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        value={selectedAdminId}
+                        onChange={(e) => setSelectedAdminId(e.target.value)}
+                        required
+                      >
+                        <option value="">Select a faculty member...</option>
+                        {allAdmins
+                          .filter((a) => a.role === "faculty")
+                          .map((admin) => (
+                            <option key={admin.id} value={admin.id}>
+                              {admin.full_name} ({admin.role.toUpperCase()})
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                  )}
+
                   <Button
                     type="submit"
                     className="bg-primary hover:bg-primary/90"
@@ -528,7 +672,158 @@ const ConcernDetail = () => {
               </form>
             )}
 
-            {/* Timeline */}
+            {/* Faculty Review Form (For Faculty Only) */}
+            {role === "faculty" && concern.status === "escalated" && !concern.faculty_response && (
+              <form onSubmit={handleFacultySubmit} className="bg-card rounded-lg border p-6 card-elevated">
+                <h3 className="text-lg font-semibold mb-4">Faculty Remarks</h3>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="faculty-remarks">Remarks for USC *</Label>
+                    <Textarea
+                      id="faculty-remarks"
+                      value={facultyReview.response}
+                      onChange={e => setFacultyReview({ ...facultyReview, response: e.target.value })}
+                      placeholder="Provide guidance or remarks for the USC describing the next steps..."
+                      rows={4}
+                      required
+                    />
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-6">
+                    <label className="flex items-center gap-2 cursor-pointer bg-secondary/50 p-3 rounded-lg hover:bg-secondary transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={facultyReview.isOpenForum}
+                        onChange={e => setFacultyReview({ ...facultyReview, isOpenForum: e.target.checked })}
+                        className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
+                      />
+                      <span className="text-sm font-medium">Recommend for Open Forum</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer bg-destructive/10 p-3 rounded-lg hover:bg-destructive/20 transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={facultyReview.isFlagship}
+                        onChange={e => setFacultyReview({ ...facultyReview, isFlagship: e.target.checked })}
+                        className="w-4 h-4 rounded border-gray-300 text-destructive focus:ring-destructive"
+                      />
+                      <span className="text-sm font-medium text-destructive">Mark as Flagship Concern</span>
+                    </label>
+                  </div>
+                  <Button type="submit" disabled={isSubmitting} className="w-full sm:w-auto">
+                    {isSubmitting ? "Sending..." : "Send Remarks to USC"}
+                  </Button>
+                </div>
+              </form>
+            )}
+
+            {/* Faculty Remarks Display (Visible to Faculty & USC) */}
+            {concern.faculty_response && (role === 'faculty' || role === 'usc') && (
+              <div className="bg-card rounded-lg border p-6 card-elevated border-l-4 border-l-primary">
+                <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+                  <User className="h-5 w-5" /> Faculty Remarks
+                </h3>
+                <div className="bg-secondary/50 p-4 rounded-md mb-4 text-sm whitespace-pre-wrap">
+                  {concern.faculty_response}
+                </div>
+                <div className="flex gap-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  {concern.is_open_forum && (
+                    <span className="flex items-center gap-1 text-info bg-info/10 px-2 py-1 rounded">
+                      <Users className="h-3 w-3" /> Recommended for Open Forum
+                    </span>
+                  )}
+                  {concern.is_flagship && (
+                    <span className="flex items-center gap-1 text-destructive bg-destructive/10 px-2 py-1 rounded">
+                      <AlertTriangle className="h-3 w-3" /> Flagship Concern
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* USC Final Resolution Form */}
+            {role === "usc" && concern.status === "escalated" && concern.faculty_response && !concern.final_response && (
+              <form onSubmit={handleFinalSubmit} className="bg-card rounded-lg border p-6 card-elevated animate-in fade-in slide-in-from-bottom-4">
+                <h3 className="text-lg font-semibold mb-2">Final Resolution</h3>
+                <p className="text-sm text-muted-foreground mb-4">
+                  The faculty has provided their remarks above. Please formulate the final message to be sent to the student and stakeholders. This will close the concern.
+                </p>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="final-resolution">Final Message *</Label>
+                    <Textarea
+                      id="final-resolution"
+                      value={finalResolution}
+                      onChange={e => setFinalResolution(e.target.value)}
+                      placeholder="Enter the official final resolution message..."
+                      rows={5}
+                      required
+                    />
+                  </div>
+                  <Button type="submit" disabled={isSubmitting} className="w-full bg-success hover:bg-success/90">
+                    {isSubmitting ? "Resolving..." : "Send Final Message & Resolve Concern"}
+                  </Button>
+                </div>
+              </form>
+            )}
+
+            {/* Final Resolution Display (Visible to All) */}
+            {concern.final_response && (
+              <div className="bg-card rounded-lg border p-6 card-elevated border-l-4 border-l-success">
+                <h3 className="text-lg font-semibold mb-3 flex items-center gap-2 text-success">
+                  <CheckCircle className="h-5 w-5" /> Final Resolution
+                </h3>
+                <div className="bg-success/5 p-4 rounded-md text-sm whitespace-pre-wrap text-foreground">
+                  {concern.final_response}
+                </div>
+                <div className="mt-2 text-xs text-muted-foreground italic text-right">
+                  Resolved by Student Council
+                </div>
+              </div>
+            )}
+            {role === "usc" && concern.status === "escalated" && !assignedAdmins.some(a => a.role === 'faculty') && (
+              <div className="bg-card rounded-lg border p-6 card-elevated border-l-4 border-l-warning">
+                <h3 className="text-lg font-semibold mb-2 flex items-center gap-2">
+                  <AlertTriangle className="h-5 w-5 text-warning" />
+                  Missing Faculty Assignment
+                </h3>
+                <p className="text-sm text-muted-foreground mb-4">
+                  This concern is escalated but no faculty mentor is currently assigned. Please select one below.
+                </p>
+                <div className="flex flex-col sm:flex-row gap-4 sm:items-end">
+                  <div className="flex-1 space-y-2">
+                    <Label htmlFor="retro-assign-faculty">Select Faculty Mentor</Label>
+                    <select
+                      id="retro-assign-faculty"
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                      value={selectedAdminId}
+                      onChange={(e) => setSelectedAdminId(e.target.value)}
+                    >
+                      <option value="">Select a faculty member...</option>
+                      {allAdmins
+                        .filter((a) => a.role === "faculty")
+                        .map((admin) => (
+                          <option key={admin.id} value={admin.id}>
+                            {admin.full_name} ({admin.role.toUpperCase()})
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                  <Button
+                    onClick={handleAssignAdmin}
+                    disabled={!selectedAdminId || isSubmitting}
+                    className="w-full sm:w-auto"
+                  >
+                    {isSubmitting ? (
+                      "Assigning..."
+                    ) : (
+                      <>
+                        <UserPlus className="mr-2 h-4 w-4" />
+                        Assign Faculty
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            )}
             <div className="bg-card rounded-lg border p-6 card-elevated">
               <h3 className="text-lg font-semibold mb-4">Activity Timeline</h3>
               <div className="space-y-0">
@@ -593,79 +888,37 @@ const ConcernDetail = () => {
               </div>
             )}
 
-            {/* Assignments Management */}
-            {(role === "ssc" || role === "usc") && (
-              <div className="bg-card rounded-lg border p-5 card-elevated">
-                <h3 className="font-semibold mb-4 flex items-center gap-2">
-                  <Users className="h-4 w-4" />
-                  Management
-                </h3>
+            {/* Assigned Team (Read Only) */}
+            <div className="bg-card rounded-lg border p-5 card-elevated">
+              <h3 className="font-semibold mb-4 flex items-center gap-2">
+                <Users className="h-4 w-4" />
+                Assigned Team
+              </h3>
 
-                <div className="space-y-4">
-                  {/* Assignment Selector */}
-                  <div className="space-y-2">
-                    <Label htmlFor="assign-admin" className="text-xs text-muted-foreground uppercase tracking-wide">
-                      Assign Representative
-                    </Label>
-                    <div className="flex gap-2">
-                      <select
-                        id="assign-admin"
-                        className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-                        value={selectedAdminId}
-                        onChange={(e) => setSelectedAdminId(e.target.value)}
-                      >
-                        <option value="">Select an admin...</option>
-                        {allAdmins.map((admin) => (
-                          <option
-                            key={admin.id}
-                            value={admin.id}
-                            disabled={assignedAdmins.some(a => a.id === admin.id)}
-                          >
-                            {admin.full_name} ({admin.role.toUpperCase()})
-                          </option>
-                        ))}
-                      </select>
-                      <Button
-                        size="sm"
-                        onClick={handleAssignAdmin}
-                        disabled={!selectedAdminId || isSubmitting}
-                      >
-                        <UserPlus className="h-4 w-4" />
-                      </Button>
+              <div className="space-y-3">
+                {assignedAdmins.length > 0 ? (
+                  assignedAdmins.map((rep) => (
+                    <div key={rep.id} className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+                        <span className="text-xs font-medium text-primary">
+                          {rep.full_name
+                            .split(" ")
+                            .map((n) => n[0])
+                            .join("")
+                            .toUpperCase()}
+                        </span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{rep.full_name}</p>
+                        <p className="text-xs text-muted-foreground uppercase italic">{rep.role}</p>
+                      </div>
                     </div>
-                  </div>
-
-                  <div className="border-t pt-4">
-                    <p className="text-xs text-muted-foreground uppercase tracking-wide mb-3">
-                      Assigned Representatives
-                    </p>
-                    <div className="space-y-3">
-                      {assignedAdmins.length > 0 ? (
-                        assignedAdmins.map((rep) => (
-                          <div key={rep.id} className="flex items-center gap-2">
-                            <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-                              <span className="text-xs font-medium text-primary">
-                                {rep.full_name
-                                  .split(" ")
-                                  .map((n) => n[0])
-                                  .join("")
-                                  .toUpperCase()}
-                              </span>
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium truncate">{rep.full_name}</p>
-                              <p className="text-xs text-muted-foreground uppercase italic">{rep.role}</p>
-                            </div>
-                          </div>
-                        ))
-                      ) : (
-                        <p className="text-xs text-muted-foreground italic">No admins assigned.</p>
-                      )}
-                    </div>
-                  </div>
-                </div>
+                  ))
+                ) : (
+                  <p className="text-xs text-muted-foreground italic">No team assigned yet.</p>
+                )}
               </div>
-            )}
+            </div>
           </div>
         </div>
       </div>

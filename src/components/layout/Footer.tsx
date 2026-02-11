@@ -7,14 +7,16 @@ const Footer = () => {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
           {/* Logo & Description */}
           <div className="md:col-span-2">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-lg bg-accent flex items-center justify-center">
-                <span className="text-accent-foreground font-bold text-lg">SC</span>
-              </div>
-              <h3 className="font-semibold text-lg">The Student Council</h3>
+            <div className="mb-4">
+              <img
+                src="/logo-light.png?v=1"
+                alt="The Student Council"
+                className="w-auto object-contain"
+                style={{ height: '70px' }}
+              />
             </div>
             <p className="text-primary-foreground/70 text-sm leading-relaxed max-w-md">
-              Working for the welfare of students by addressing concerns and 
+              Working for the welfare of students by addressing concerns and
               representing student voices to the university management.
             </p>
           </div>

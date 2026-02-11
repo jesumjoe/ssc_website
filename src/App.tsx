@@ -9,6 +9,8 @@ import TrackConcern from "./pages/TrackConcern";
 import GeotagPhoto from "./pages/GeotagPhoto"; // Import the new page
 import AdminLogin from "./pages/admin/AdminLogin";
 import Dashboard from "./pages/admin/Dashboard";
+import ConcernLibrary from "./pages/admin/ConcernLibrary";
+import OpenForumLibrary from "./pages/admin/OpenForumLibrary";
 import ConcernDetail from "./pages/admin/ConcernDetail";
 import NotFound from "./pages/NotFound";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -31,6 +33,8 @@ const App = () => (
           {/* Protected Admin Routes */}
           <Route element={<ProtectedRoute />}>
             <Route path="/admin/dashboard" element={<Dashboard />} />
+            <Route path="/admin/library" element={<ConcernLibrary />} />
+            <Route path="/admin/open-forum" element={<OpenForumLibrary />} />
             <Route path="/admin/concern/:id" element={<ConcernDetail />} />
           </Route>
 

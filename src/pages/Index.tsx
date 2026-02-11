@@ -58,8 +58,7 @@ const Index = () => {
               <Button
                 asChild
                 size="lg"
-                variant="outline"
-                className="border-primary-foreground/30 text-primary-foreground hover:bg-primary-foreground/10 hover:text-primary-foreground text-base px-8"
+                className="bg-white text-primary hover:bg-gray-100 border-none text-base px-8"
               >
                 <Link to="/track-concern">Track Your Concern</Link>
               </Button>
@@ -125,24 +124,7 @@ const Index = () => {
         </div>
       </section>
 
-      {/* Stats Section */}
-      <section className="py-16 lg:py-24 bg-background">
-        <div className="container-wide">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-8">
-            {[
-              { value: "500+", label: "Concerns Addressed" },
-              { value: "24h", label: "Initial Review Time" },
-              { value: "85%", label: "Resolution Rate" },
-              { value: "100%", label: "Confidentiality" },
-            ].map((stat, index) => (
-              <div key={index} className="text-center">
-                <div className="text-4xl lg:text-5xl font-bold text-primary mb-2">{stat.value}</div>
-                <div className="text-muted-foreground">{stat.label}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
+
 
       {/* CTA Section */}
       <section className="py-16 lg:py-20 header-gradient">
@@ -163,8 +145,7 @@ const Index = () => {
             <Button
               asChild
               size="lg"
-              variant="outline"
-              className="border-primary-foreground/30 text-primary-foreground hover:bg-primary-foreground/10 hover:text-primary-foreground text-base"
+              className="bg-white text-primary hover:bg-gray-100 border-none text-base px-8"
             >
               <Link to="/track-concern">
                 <Search className="mr-2 h-5 w-5" />
