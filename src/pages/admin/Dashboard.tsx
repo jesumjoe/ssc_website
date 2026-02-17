@@ -17,6 +17,8 @@ import {
   School,
   AlertCircle,
   Tag,
+  Settings,
+  HelpCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatusBadge, SeverityBadge, ConcernStatus } from "@/components/ui/status-badge";
@@ -243,42 +245,12 @@ const Dashboard = () => {
 
           <nav className="space-y-1">
             <button
-              onClick={() => setActiveTab("all")}
-              className={`sidebar-link w-full ${activeTab === "all" ? "sidebar-link-active" : ""}`}
+              onClick={() => setActiveTab("escalated")}
+              className={`sidebar-link w-full ${activeTab === "escalated" ? "sidebar-link-active" : ""}`}
             >
-              <LayoutDashboard className="h-5 w-5" />
-              Dashboard
+              <AlertTriangle className="h-5 w-5" />
+              Escalated
             </button>
-            <button
-              onClick={() => setActiveTab("all")}
-              className={`sidebar-link w-full ${activeTab === "all" ? "sidebar-link-active" : ""}`}
-            >
-              <FileText className="h-5 w-5" />
-              All Concerns
-            </button>
-            <button
-              onClick={() => setActiveTab("pending")}
-              className={`sidebar-link w-full ${activeTab === "pending" ? "sidebar-link-active" : ""}`}
-            >
-              <Clock className="h-5 w-5" />
-              Pending Review
-            </button>
-            <button
-              onClick={() => setActiveTab("resolved")}
-              className={`sidebar-link w-full ${activeTab === "resolved" ? "sidebar-link-active" : ""}`}
-            >
-              <CheckCircle className="h-5 w-5" />
-              Resolved
-            </button>
-            {role === "usc" && (
-              <button
-                onClick={() => setActiveTab("escalated")}
-                className={`sidebar-link w-full ${activeTab === "escalated" ? "sidebar-link-active" : ""}`}
-              >
-                <AlertTriangle className="h-5 w-5" />
-                Escalated
-              </button>
-            )}
             <button
               onClick={() => navigate("/admin/library")}
               className="sidebar-link w-full"
@@ -293,6 +265,22 @@ const Dashboard = () => {
               <Users className="h-5 w-5" />
               Open Forum
             </button>
+            <div className="pt-4 mt-4 border-t border-sidebar-border">
+              <button
+                onClick={() => toast({ title: "Settings", description: "Global settings coming soon." })}
+                className="sidebar-link w-full"
+              >
+                <Settings className="h-5 w-5" />
+                Settings
+              </button>
+              <button
+                onClick={() => toast({ title: "Help", description: "Support documentation coming soon." })}
+                className="sidebar-link w-full"
+              >
+                <HelpCircle className="h-5 w-5" />
+                Help & Support
+              </button>
+            </div>
           </nav>
         </div>
 
@@ -386,72 +374,11 @@ const Dashboard = () => {
             </div>
 
             {/* Role-Specific Secondary Profiles (Partner/Subordinates Summary) */}
-            {role === 'ssc' && partnerData && (
-              <div className="bg-card rounded-xl border p-6 shadow-sm border-primary/20 bg-primary/5">
-                <h3 className="text-sm font-bold uppercase tracking-wider text-primary mb-4">SSC Partner</h3>
-                <div className="flex items-center gap-4 mb-4">
-                  <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center overflow-hidden">
-                    {partnerData.avatar_url ? (
-                      <img src={partnerData.avatar_url} alt={partnerData.full_name} className="w-full h-full object-cover" />
-                    ) : (
-                      <User className="h-6 w-6 text-primary" />
-                    )}
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-foreground">{partnerData.full_name}</h4>
-                    <p className="text-xs text-muted-foreground">{partnerData.email}</p>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div className="flex items-center gap-2">
-                    <Phone className="h-3 w-3 text-muted-foreground" />
-                    <span>{partnerData.phone_number || 'N/A'}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <BookOpen className="h-3 w-3 text-muted-foreground" />
-                    <span>{partnerData.class || 'N/A'}</span>
-                  </div>
-                </div>
-              </div>
-            )}
 
-            {role === 'usc' && (
-              <div className="bg-card rounded-xl border p-6 shadow-sm">
-                <h3 className="text-sm font-bold uppercase tracking-wider text-foreground mb-4">SSCs Under Management</h3>
-                <div className="flex flex-wrap gap-2">
-                  {subordinates.map(ssc => (
-                    <div key={ssc.id} className="flex items-center gap-2 bg-muted px-3 py-1.5 rounded-full text-xs">
-                      <div className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center overflow-hidden">
-                        {ssc.avatar_url ? (
-                          <img src={ssc.avatar_url} className="w-full h-full object-cover" />
-                        ) : ssc.full_name[0]}
-                      </div>
-                      <span>{ssc.full_name}</span>
-                    </div>
-                  ))}
-                  {subordinates.length === 0 && <p className="text-xs text-muted-foreground">No SSCs assigned yet.</p>}
-                </div>
-              </div>
-            )}
 
-            {role === 'faculty' && (
-              <div className="bg-card rounded-xl border p-6 shadow-sm">
-                <h3 className="text-sm font-bold uppercase tracking-wider text-foreground mb-4">USCs Under Mentorship</h3>
-                <div className="flex flex-wrap gap-2">
-                  {subordinates.map(usc => (
-                    <div key={usc.id} className="flex items-center gap-2 bg-muted px-3 py-1.5 rounded-full text-xs">
-                      <div className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center overflow-hidden">
-                        {usc.avatar_url ? (
-                          <img src={usc.avatar_url} className="w-full h-full object-cover" />
-                        ) : usc.full_name[0]}
-                      </div>
-                      <span>{usc.full_name}</span>
-                    </div>
-                  ))}
-                  {subordinates.length === 0 && <p className="text-xs text-muted-foreground">No USCs assigned yet.</p>}
-                </div>
-              </div>
-            )}
+
+
+
           </div>
           {/* Stats Cards */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
@@ -517,6 +444,7 @@ const Dashboard = () => {
             {[
               { key: "pending", label: "Pending Review" },
               { key: "reviewed", label: "Reviewed" },
+              { key: "escalated", label: "Escalated" },
               { key: "all", label: "All Concerns" },
             ].map((tab) => (
               <button
